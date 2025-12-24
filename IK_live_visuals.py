@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import sys
 import time
 
+
 # DH parameters [theta, d, a, alpha] - standard 6DOF arm [file:1]
 DH = np.array([
     [0, 0.15, 0.0,   np.pi/2],   # Joint 1 (base)
@@ -15,6 +16,7 @@ DH = np.array([
     [0, 0.10, 0.0,  0]           # Joint 6 (wrist 2,3)
 ])
 
+
 def rotation_matrix(theta, alpha):
     return np.array([
         [np.cos(theta), -np.sin(theta)*np.cos(alpha),  np.sin(theta)*np.sin(alpha)],
@@ -22,12 +24,14 @@ def rotation_matrix(theta, alpha):
         [0,              np.sin(alpha),                np.cos(alpha)]
     ])
 
+
 def transformation_matrix(theta, d, a, alpha):
     T = np.eye(4)
     T[:3,:3] = rotation_matrix(theta, alpha)
     T[0,3] = a
     T[2,3] = d
     return T
+
 
 def forward_kinematics(q):
     """q: 6 joint angles (rad), returns end-effector pose [x,y,z,R,P,Y]"""
@@ -42,6 +46,7 @@ def forward_kinematics(q):
     RPY = rpy_from_matrix(T_total[:3,:3])
     return np.concatenate([pos, RPY])
 
+
 def rpy_from_matrix(R):
     """Extract RPY from rotation matrix - STANDARD XYZ order"""
     roll = np.arctan2(R[2,1], R[2,2])
@@ -49,9 +54,9 @@ def rpy_from_matrix(R):
     yaw = np.arctan2(R[1,0], R[0,0])
     return np.array([roll, pitch, yaw])
 
+
 def matrix_from_rpy(roll, pitch, yaw):
     """Convert RPY (roll-pitch-yaw) to rotation matrix - FIXED ORDER"""
-    # Fixed: R = Rz(yaw) * Ry(pitch) * Rx(roll)
     Rx = np.array([
         [1, 0, 0],
         [0, np.cos(roll), -np.sin(roll)],
@@ -68,6 +73,7 @@ def matrix_from_rpy(roll, pitch, yaw):
         [0, 0, 1]
     ])
     return Rz @ Ry @ Rx
+
 
 def inverse_kinematics(target_pose, q0=None, max_iter=1000):
     """ULTIMATE ACCURACY IK - position priority + verification"""
@@ -110,12 +116,14 @@ def inverse_kinematics(target_pose, q0=None, max_iter=1000):
         return best_q
     return None
 
+
 def generate_trajectory(q_start, q_end, steps=50):
     t = np.linspace(0, 1, steps)[:, np.newaxis]
     return q_start + t * (q_end - q_start)
 
+
 def live_visualize_trajectory(q_traj, target_pose, speed=0.03):
-    """Enhanced visualization with target marker"""
+    """Enhanced visualization with target marker + END EFFECTOR PATH + SINGLE XYZ LABEL"""
     fig = plt.figure(figsize=(12,9))
     ax = fig.add_subplot(111, projection='3d')
     
@@ -131,8 +139,17 @@ def live_visualize_trajectory(q_traj, target_pose, speed=0.03):
     end_eff = ax.scatter([], [], [], c='r', s=200, label='End Effector')
     base = ax.scatter([0], [0], [0], c='g', s=150, label='Base')
     
+    # END EFFECTOR TRAJECTORY PATH (trajectory of xyz points)
+    traj_line, = ax.plot([], [], [], 'r--', linewidth=2, alpha=0.7, label='End Effector Path')
+    
+    # SINGLE XYZ LABEL - TRACKS CURRENT POSITION ONLY
+    xyz_label = None
+    
     ax.legend()
     plt.tight_layout()
+    
+    # Pre-compute end effector positions for trajectory line
+    end_effector_positions = []
     
     for frame in range(len(q_traj)):
         q = q_traj[frame]
@@ -146,8 +163,26 @@ def live_visualize_trajectory(q_traj, target_pose, speed=0.03):
             points.append(T[:3,3].copy())
         
         points = np.array(points)
+        
+        # Store end effector position for trajectory
+        end_effector_positions.append(points[-1].copy())
+        
+        # Update robot arm
         line.set_data_3d(points[:,0], points[:,1], points[:,2])
         end_eff._offsets3d = (points[-1:,0], points[-1:,1], points[-1:,2])
+        
+        # Update end effector trajectory path
+        traj_points = np.array(end_effector_positions)
+        traj_line.set_data_3d(traj_points[:,0], traj_points[:,1], traj_points[:,2])
+        
+        # UPDATE SINGLE XYZ LABEL - REMOVE OLD, CREATE NEW
+        if xyz_label is not None:
+            xyz_label.remove()
+        end_pos = points[-1]
+        xyz_label = ax.text(end_pos[0], end_pos[1], end_pos[2]+0.02, 
+                           f'({end_pos[0]:.2f}, {end_pos[1]:.2f}, {end_pos[2]:.2f})',
+                           color='magenta', fontsize=10, fontweight='bold',
+                           bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.9))
         
         fig.canvas.draw()
         fig.canvas.flush_events()
@@ -156,32 +191,32 @@ def live_visualize_trajectory(q_traj, target_pose, speed=0.03):
     plt.ioff()
     plt.close(fig)
 
+
 # Main simulation - HIGH ACCURACY [file:1]
 if __name__ == "__main__":
     # Extended arm home position
     q_current = np.array([1.2, 1.2, 0, 0, 0, 0])
     
-    # print("6-DOF Robot HIGH-ACCURACY Simulator")
-    # print("Commands: 'rel dx dy dz' or 'abs x y z R P Y' or 'quit'")
-    # print("Workspace: x=[-0.6,0.6], y=[-0.6,0.6], z=[0.2,1.0]\n")
-    # print(f"Initial pose: {forward_kinematics(q_current)}")
-    
+    print("6-DOF Robot HIGH-ACCURACY Simulator")
+    print("Commands: 'rel dx dy dz' or 'abs x y z R P Y' or 'quit'")
+    print("Workspace: x=[-0.6,0.6], y=[-0.6,0.6], z=[0.2,1.0]\n")
+    print(f"Initial pose: {forward_kinematics(q_current)}")
     
     while True:
         try:
             cmd = input("Enter command: ").strip().split()
             if cmd[0].lower() == 'quit': break
-                     
+               
             if cmd[0].lower() == 'rel':
                 dx, dy, dz = map(float, cmd[1:4])
                 current_pose = forward_kinematics(q_current)
                 target_pose = np.append(current_pose[:3] + [dx,dy,dz], current_pose[3:])
                 print(f"Relative: +[{dx:.3f}, {dy:.3f}, {dz:.3f}]m")
-                
+               
             elif cmd[0].lower() == 'abs':
                 target_pose = np.array(list(map(float, cmd[1:])))
                 print(f"Target: [{target_pose[0]:.3f}, {target_pose[1]:.3f}, {target_pose[2]:.3f}]")
-            
+           
             else:
                 print("Invalid command!")
                 continue
@@ -193,20 +228,19 @@ if __name__ == "__main__":
                 trajectory = generate_trajectory(q_current, q_target, steps=50)
                 print("Executing LIVE trajectory...")
                 live_visualize_trajectory(trajectory, target_pose, speed=0.03)
-                
+               
                 q_current = q_target
                 final_pose = forward_kinematics(q_current)
                 pos_error = np.linalg.norm(final_pose[:3] - target_pose[:3])
-                
+               
                 print(f"✓ TARGET: [{target_pose[0]:.3f}, {target_pose[1]:.3f}, {target_pose[2]:.3f}]")
                 print(f"✓ ACTUAL: [{final_pose[0]:.3f}, {final_pose[1]:.3f}, {final_pose[2]:.3f}]")
                 print(f"Position error: {pos_error*1000:.1f}mm (<5mm = PERFECT)")
                 print()
-                    
             else:
                 print("✗ IK failed - target outside workspace")
                 print()
-                
+               
         except (ValueError, KeyboardInterrupt):
             print("\nExiting...")
             plt.close('all')
