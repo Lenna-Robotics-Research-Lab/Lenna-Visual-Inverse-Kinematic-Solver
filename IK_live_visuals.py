@@ -270,7 +270,7 @@ def live_visualize_trajectory(q_traj, target_pose, speed=0.03, hold_time=5.0):
         plt.pause(speed)
     
     # Hold the plot open for specified time after trajectory completion
-    print(f"Trajectory complete. Displaying for {hold_time} seconds...")
+    print(f"Trajectory complete. Displaying Results")
     plt.pause(hold_time)
     
     plt.close(fig)
